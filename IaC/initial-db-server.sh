@@ -24,3 +24,13 @@ sudo mysql -e "FLUSH PRIVILEGES;"
 # 6) Remote-Zugriff erlauben (bind-address anpassen)
 sudo sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
 sudo systemctl restart mysql
+
+# 7) Interne IP-Adresse des Datenbankservers ermitteln
+DB_IP=$(hostname -I | awk '{print $1}')
+
+# 8) Verbindungsoptionen für Nextcloud ausgeben
+echo "Datenbank-Host: $DB_IP"
+echo "Datenbank-Name: nextcloud"
+echo "Datenbank-Benutzer: nextcloud"
+echo "Datenbank-Passwort: nextcloud-pass"
+ 
