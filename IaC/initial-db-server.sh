@@ -33,4 +33,3 @@ echo "Datenbank-Host: $DB_IP"
 echo "Datenbank-Name: nextcloud"
 echo "Datenbank-Benutzer: nextcloud"
 echo "Datenbank-Passwort: nextcloud-pass"
- 
