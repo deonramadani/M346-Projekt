@@ -50,20 +50,11 @@ echo
 AWS="aws --region ${AWS_REGION}"
 
 #########################################################
-# Aktuelles Ubuntu 22.04 AMI ueber SSM Parameter holen
+# Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)
 #########################################################
 
-echo "==> Ermittle aktuelles Ubuntu 22.04 AMI ueber SSM..."
-AMI_ID=$($AWS ssm get-parameters \
-  --names "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp3/ami-id" \
-  --query "Parameters[0].Value" \
-  --output text)
-
-if [ -z "$AMI_ID" ]; then
-  echo "Fehler: Konnte Ubuntu 22.04 AMI nicht ermitteln."
-  exit 1
-fi
-
+echo "==> Setze Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)..."
+AMI_ID="ami-04b4f1a9cf54c11d0"
 echo "Verwende AMI_ID = ${AMI_ID}"
 echo
 
