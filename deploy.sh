@@ -1,4 +1,7 @@
 #!/bin/bash
+# Autor: Armin Hujdur, Jan Speck
+# Datum: 2025-11-24
+# Erklärung: Das Skript baut automatisch die noetige AWS-Infrastruktur auf und startet zwei EC2-Server, auf denen es Webserver, Datenbank und Nextcloud fertig einrichtet.
 set -e
 
 #########################################################
