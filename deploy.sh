@@ -3,10 +3,10 @@ set -e
 
 #########################################################
 # M346 Nextcloud Deployment Script
-# - fuer AWS CloudShell
+# - fuer AWS CloudShell in us-east-1 (N. Virginia)
 # - erstellt VPC, Subnet, Routing, Security Groups
 # - startet Web- und DB-Server
-# - nutzt IaC/initial-webserver.sh und IaC/initial-db-server.sh
+# - bettet die Init-Skripte direkt als User Data ein
 #########################################################
 
 # Region aus AWS Konfiguration holen (CloudShell hat die schon gesetzt)
@@ -21,29 +21,12 @@ VPC_CIDR="10.0.0.0/16"
 PUBLIC_SUBNET_CIDR="10.0.1.0/24"
 INSTANCE_TYPE="t3.micro"
 
-# Pfade zu euren Initialskripten
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-IAC_DIR="${SCRIPT_DIR}/IaC"
-
-WEB_USER_DATA="${IAC_DIR}/initial-webserver.sh"
-DB_USER_DATA="${IAC_DIR}/initial-db-server.sh"
-
-if [ ! -f "$WEB_USER_DATA" ] || [ ! -f "$DB_USER_DATA" ]; then
-  echo "Fehler: initial-webserver.sh oder initial-db-server.sh nicht im Verzeichnis IaC/ gefunden."
-  echo "Erwartete Pfade:"
-  echo "  ${WEB_USER_DATA}"
-  echo "  ${DB_USER_DATA}"
-  exit 1
-fi
-
 echo "================ DEPLOY KONFIG ================"
 echo "Region:           ${AWS_REGION}"
 echo "Projektname:      ${PROJECT_NAME}"
 echo "VPC CIDR:         ${VPC_CIDR}"
 echo "Subnet CIDR:      ${PUBLIC_SUBNET_CIDR}"
 echo "Instance Type:    ${INSTANCE_TYPE}"
-echo "Web User-Data:    ${WEB_USER_DATA}"
-echo "DB User-Data:     ${DB_USER_DATA}"
 echo "================================================"
 echo
 
@@ -56,6 +39,133 @@ AWS="aws --region ${AWS_REGION}"
 echo "==> Setze Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)..."
 AMI_ID="ami-04b4f1a9cf54c11d0"
 echo "Verwende AMI_ID = ${AMI_ID}"
+echo
+
+#########################################################
+# User-Data Skripte als temporäre Dateien anlegen
+#########################################################
+
+WEB_USER_DATA_FILE="/tmp/web-user-data.sh"
+DB_USER_DATA_FILE="/tmp/db-user-data.sh"
+
+echo "==> Schreibe User-Data Skript fuer Webserver nach ${WEB_USER_DATA_FILE}..."
+cat > "${WEB_USER_DATA_FILE}" << 'EOF'
+#!/bin/bash
+# Autor: Deon Ramadani
+# Datum: 2025-11-21
+# Erklaerung: Dieses Skript installiert und konfiguriert einen Apache-Webserver
+#            mit PHP 8.2 und Nextcloud.
+
+# 1) Aktualisierung der Paketliste
+sudo apt-get update
+
+# 2) Tool fuer add-apt-repository installieren
+sudo apt-get install -y software-properties-common
+
+# 3) PHP 8.2 Repository hinzufuegen und Paketliste aktualisieren
+sudo add-apt-repository ppa:ondrej/php -y
+sudo apt-get update
+
+# 4) Installation des Apache-Webservers
+sudo apt-get install -y apache2
+
+# 5) PHP 8.2 und benoetigte Module installieren
+# Da man sie nicht alle in einem Befehl installieren kann, werden sie einzeln installiert
+
+sudo apt-get install -y php8.2
+
+sudo apt-get install -y libapache2-mod-php8.2
+
+sudo apt-get install -y php8.2-gd
+
+sudo apt-get install -y php8.2-xml
+
+sudo apt-get install -y php8.2-mbstring
+
+sudo apt-get install -y php8.2-curl
+
+sudo apt-get install -y php8.2-zip
+
+sudo apt-get install -y php8.2-mysql
+
+sudo apt-get install -y php8.2-intl
+
+sudo apt-get install -y php8.2-bcmath
+
+sudo apt-get install -y php8.2-gmp
+
+# 6) Apache starten und beim Systemstart aktivieren
+sudo systemctl start apache2
+sudo systemctl enable apache2
+
+# 7) Nextcloud herunterladen und entpacken
+cd /tmp
+wget https://download.nextcloud.com/server/releases/latest.zip -O nextcloud.zip
+sudo apt-get install -y unzip
+sudo unzip nextcloud.zip -d /var/www/
+
+# 8) Rechte fuer den Webserver-Benutzer setzen
+sudo chown -R www-data:www-data /var/www/nextcloud
+sudo chmod -R 755 /var/www/nextcloud
+
+# 9) Apache so konfigurieren, dass Nextcloud die Startseite ist
+sudo sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/nextcloud|' /etc/apache2/sites-available/000-default.conf
+sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/000-default.conf
+
+# 10) Rewrite-Modul aktivieren (wird von Nextcloud benoetigt)
+sudo a2enmod rewrite
+
+# 11) Apache neu starten, damit alle Aenderungen aktiv werden
+sudo systemctl restart apache2
+EOF
+
+chmod +x "${WEB_USER_DATA_FILE}"
+
+echo "==> Schreibe User-Data Skript fuer DB-Server nach ${DB_USER_DATA_FILE}..."
+cat > "${DB_USER_DATA_FILE}" << 'EOF'
+#!/bin/bash
+# Autor: Deon Ramadani
+# Datum: 2025-11-21
+# Erklaerung: Dieses Skript installiert und konfiguriert einen MySQL-Datenbankserver
+
+# 1) Aktualisierung der Paketliste
+sudo apt-get update
+
+# 2) Installation des MySQL-Datenbankservers
+sudo apt-get install -y mysql-server
+
+# 3) Starten und Aktivieren des MySQL-Datenbankservers
+sudo systemctl start mysql
+
+# 4) Sicherstellen, dass der MySQL-Datenbankserver beim Systemstart automatisch gestartet wird
+sudo systemctl enable mysql
+
+# 5) Nextcloud-Datenbank und Benutzer anlegen
+sudo mysql -e "CREATE DATABASE nextcloud CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+sudo mysql -e "CREATE USER 'nextcloud'@'%' IDENTIFIED BY 'nextcloud-pass';"
+sudo mysql -e "GRANT ALL PRIVILEGES ON nextcloud.* TO 'nextcloud'@'%';"
+sudo mysql -e "FLUSH PRIVILEGES;"
+
+# 6) Remote-Zugriff erlauben (bind-address anpassen)
+sudo sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
+sudo systemctl restart mysql
+
+# 7) Interne IP-Adresse des Datenbankservers ermitteln
+DB_IP=\$(hostname -I | awk '{print \$1}')
+
+# 8) Verbindungsoptionen fuer Nextcloud ausgeben
+echo "Datenbank-Host: \$DB_IP"
+echo "Datenbank-Name: nextcloud"
+echo "Datenbank-Benutzer: nextcloud"
+echo "Datenbank-Passwort: nextcloud-pass"
+EOF
+
+chmod +x "${DB_USER_DATA_FILE}"
+
+echo
+echo "User-Data Dateien erstellt:"
+echo "  Web: ${WEB_USER_DATA_FILE}"
+echo "  DB:  ${DB_USER_DATA_FILE}"
 echo
 
 #########################################################
@@ -165,7 +275,7 @@ WEB_INSTANCE_ID=$($AWS ec2 run-instances \
   --subnet-id "${SUBNET_ID}" \
   --security-group-ids "${WEB_SG_ID}" \
   --associate-public-ip-address \
-  --user-data "file://${WEB_USER_DATA}" \
+  --user-data file://${WEB_USER_DATA_FILE} \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-web},{Key=Role,Value=web}]" \
   --query 'Instances[0].InstanceId' \
   --output text)
@@ -178,7 +288,7 @@ DB_INSTANCE_ID=$($AWS ec2 run-instances \
   --subnet-id "${SUBNET_ID}" \
   --security-group-ids "${DB_SG_ID}" \
   --associate-public-ip-address \
-  --user-data "file://${DB_USER_DATA}" \
+  --user-data file://${DB_USER_DATA_FILE} \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-db},{Key=Role,Value=db}]" \
   --query 'Instances[0].InstanceId' \
   --output text)
