@@ -1,262 +1,229 @@
-#############################
-# main.tf – Komplettes Skript
-#############################
+#!/bin/bash
+set -e
 
-terraform {
-  required_version = ">= 1.5.0"
+#########################################################
+# M346 Nextcloud Deployment Script
+# - fuer AWS CloudShell
+# - erstellt VPC, Subnet, Routing, Security Groups
+# - startet Web- und DB-Server
+# - nutzt IaC/initial-webserver.sh und IaC/initial-db-server.sh
+#########################################################
 
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
+# Region aus AWS Konfiguration holen (CloudShell hat die schon gesetzt)
+AWS_REGION="${AWS_REGION:-$(aws configure get region)}"
+if [ -z "$AWS_REGION" ]; then
+  echo "Konnte keine AWS Region ermitteln. Bitte in der Console eine Region waehlen."
+  exit 1
+fi
 
-#############################
-# Variablen
-#############################
+PROJECT_NAME="m346-nextcloud"
+VPC_CIDR="10.0.0.0/16"
+PUBLIC_SUBNET_CIDR="10.0.1.0/24"
+INSTANCE_TYPE="t3.micro"
 
-variable "aws_region" {
-  description = "AWS Region"
-  type        = string
-  default     = "eu-central-1" # Frankfurt
-}
+# Pfade zu euren Initialskripten
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+IAC_DIR="${SCRIPT_DIR}/IaC"
 
-variable "project_name" {
-  description = "Prefix für alle Ressourcen"
-  type        = string
-  default     = "m346-nextcloud"
-}
+WEB_USER_DATA="${IAC_DIR}/initial-webserver.sh"
+DB_USER_DATA="${IAC_DIR}/initial-db-server.sh"
 
-variable "vpc_cidr" {
-  description = "CIDR Block für die VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
+if [ ! -f "$WEB_USER_DATA" ] || [ ! -f "$DB_USER_DATA" ]; then
+  echo "Fehler: initial-webserver.sh oder initial-db-server.sh nicht im Verzeichnis IaC/ gefunden."
+  echo "Erwartete Pfade:"
+  echo "  ${WEB_USER_DATA}"
+  echo "  ${DB_USER_DATA}"
+  exit 1
+fi
 
-variable "public_subnet_cidr" {
-  description = "CIDR Block für das Public Subnet"
-  type        = string
-  default     = "10.0.1.0/24"
-}
+echo "================ DEPLOY KONFIG ================"
+echo "Region:           ${AWS_REGION}"
+echo "Projektname:      ${PROJECT_NAME}"
+echo "VPC CIDR:         ${VPC_CIDR}"
+echo "Subnet CIDR:      ${PUBLIC_SUBNET_CIDR}"
+echo "Instance Type:    ${INSTANCE_TYPE}"
+echo "Web User-Data:    ${WEB_USER_DATA}"
+echo "DB User-Data:     ${DB_USER_DATA}"
+echo "================================================"
+echo
 
-variable "instance_type" {
-  description = "EC2 Instance Type für Web- und DB-Server"
-  type        = string
-  default     = "t3.micro"
-}
+AWS="aws --region ${AWS_REGION}"
 
-variable "ssh_allowed_cidr" {
-  description = "IP-Bereich, der per SSH verbinden darf"
-  type        = string
-  # TODO: Eigene öffentliche IP eintragen, nicht 0.0.0.0/0 im echten Betrieb
-  default     = "0.0.0.0/0"
-}
+#########################################################
+# Aktuelles Ubuntu 22.04 AMI ueber SSM Parameter holen
+#########################################################
 
-variable "key_name" {
-  description = "Name eines bestehenden AWS Key Pairs"
-  type        = string
-}
+echo "==> Ermittle aktuelles Ubuntu 22.04 AMI ueber SSM..."
+AMI_ID=$($AWS ssm get-parameters \
+  --names "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp3/ami-id" \
+  --query "Parameters[0].Value" \
+  --output text)
 
-variable "ami_id" {
-  description = "AMI ID (z.B. Ubuntu 22.04 in eurer Region)"
-  type        = string
-}
+if [ -z "$AMI_ID" ]; then
+  echo "Fehler: Konnte Ubuntu 22.04 AMI nicht ermitteln."
+  exit 1
+fi
 
-#############################
-# Provider
-#############################
+echo "Verwende AMI_ID = ${AMI_ID}"
+echo
 
-provider "aws" {
-  region = var.aws_region
-}
+#########################################################
+# VPC und Netzwerk
+#########################################################
 
-#############################
-# Netzwerk (VPC, Subnet, Routing)
-#############################
+echo "==> VPC anlegen..."
+VPC_ID=$($AWS ec2 create-vpc \
+  --cidr-block "${VPC_CIDR}" \
+  --tag-specifications "ResourceType=vpc,Tags=[{Key=Name,Value=${PROJECT_NAME}-vpc}]" \
+  --query 'Vpc.VpcId' \
+  --output text)
+echo "VPC_ID = ${VPC_ID}"
 
-resource "aws_vpc" "main" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+# DNS Features aktivieren
+$AWS ec2 modify-vpc-attribute --vpc-id "${VPC_ID}" --enable-dns-support "{\"Value\":true}"
+$AWS ec2 modify-vpc-attribute --vpc-id "${VPC_ID}" --enable-dns-hostnames "{\"Value\":true}"
 
-  tags = {
-    Name = "${var.project_name}-vpc"
-  }
-}
+echo "==> Internet-Gateway anlegen und verbinden..."
+IGW_ID=$($AWS ec2 create-internet-gateway \
+  --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Name,Value=${PROJECT_NAME}-igw}]" \
+  --query 'InternetGateway.InternetGatewayId' \
+  --output text)
+$AWS ec2 attach-internet-gateway --internet-gateway-id "${IGW_ID}" --vpc-id "${VPC_ID}"
+echo "IGW_ID = ${IGW_ID}"
 
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
+echo "==> Public Subnet anlegen..."
+SUBNET_ID=$($AWS ec2 create-subnet \
+  --vpc-id "${VPC_ID}" \
+  --cidr-block "${PUBLIC_SUBNET_CIDR}" \
+  --tag-specifications "ResourceType=subnet,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-subnet}]" \
+  --query 'Subnet.SubnetId' \
+  --output text)
+echo "SUBNET_ID = ${SUBNET_ID}"
 
-  tags = {
-    Name = "${var.project_name}-igw"
-  }
-}
+# Public IPs automatisch vergeben
+$AWS ec2 modify-subnet-attribute --subnet-id "${SUBNET_ID}" --map-public-ip-on-launch
 
-resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidr
-  map_public_ip_on_launch = true
+echo "==> Route-Table fuer Internetzugang..."
+ROUTE_TABLE_ID=$($AWS ec2 create-route-table \
+  --vpc-id "${VPC_ID}" \
+  --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-rt}]" \
+  --query 'RouteTable.RouteTableId' \
+  --output text)
+echo "ROUTE_TABLE_ID = ${ROUTE_TABLE_ID}"
 
-  tags = {
-    Name = "${var.project_name}-public-subnet"
-  }
-}
+$AWS ec2 create-route \
+  --route-table-id "${ROUTE_TABLE_ID}" \
+  --destination-cidr-block "0.0.0.0/0" \
+  --gateway-id "${IGW_ID}" >/dev/null
 
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+$AWS ec2 associate-route-table \
+  --route-table-id "${ROUTE_TABLE_ID}" \
+  --subnet-id "${SUBNET_ID}" >/dev/null
 
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = "${var.project_name}-public-rt"
-  }
-}
-
-resource "aws_route_table_association" "public_assoc" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
-}
-
-#############################
+#########################################################
 # Security Groups
-#############################
+#########################################################
 
-# Webserver: HTTP/HTTPS von überall, SSH nur von eurer IP
-resource "aws_security_group" "web_sg" {
-  name        = "${var.project_name}-web-sg"
-  description = "Security Group für Webserver"
-  vpc_id      = aws_vpc.main.id
+echo "==> Security Groups erstellen..."
 
-  # HTTP
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# Webserver SG: HTTP/HTTPS aus dem Internet
+WEB_SG_ID=$($AWS ec2 create-security-group \
+  --group-name "${PROJECT_NAME}-web-sg" \
+  --description "Security Group fuer Webserver" \
+  --vpc-id "${VPC_ID}" \
+  --query 'GroupId' \
+  --output text)
+$AWS ec2 create-tags --resources "${WEB_SG_ID}" --tags Key=Name,Value="${PROJECT_NAME}-web-sg"
 
-  # HTTPS (für späteres TLS)
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# HTTP
+$AWS ec2 authorize-security-group-ingress \
+  --group-id "${WEB_SG_ID}" \
+  --ip-permissions IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges="[{CidrIp=0.0.0.0/0}]"
 
-  # SSH
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
+# HTTPS (falls spaeter TLS)
+$AWS ec2 authorize-security-group-ingress \
+  --group-id "${WEB_SG_ID}" \
+  --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges="[{CidrIp=0.0.0.0/0}]"
 
-  # Alles raus erlaubt
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+# DB SG: MySQL nur aus VPC (inkl. Webserver)
+DB_SG_ID=$($AWS ec2 create-security-group \
+  --group-name "${PROJECT_NAME}-db-sg" \
+  --description "Security Group fuer DB-Server" \
+  --vpc-id "${VPC_ID}" \
+  --query 'GroupId' \
+  --output text)
+$AWS ec2 create-tags --resources "${DB_SG_ID}" --tags Key=Name,Value="${PROJECT_NAME}-db-sg"
 
-  tags = {
-    Name = "${var.project_name}-web-sg"
-  }
-}
+# MySQL/MariaDB nur aus dem VPC Netz
+$AWS ec2 authorize-security-group-ingress \
+  --group-id "${DB_SG_ID}" \
+  --ip-permissions IpProtocol=tcp,FromPort=3306,ToPort=3306,IpRanges="[{CidrIp=${VPC_CIDR}}]"
 
-# DB-Server: DB-Port nur vom Web-SG, SSH von eurer IP
-resource "aws_security_group" "db_sg" {
-  name        = "${var.project_name}-db-sg"
-  description = "Security Group für DB-Server"
-  vpc_id      = aws_vpc.main.id
+echo "WEB_SG_ID = ${WEB_SG_ID}"
+echo "DB_SG_ID  = ${DB_SG_ID}"
+echo
 
-  # MySQL / MariaDB
-  ingress {
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    security_groups = [aws_security_group.web_sg.id]
-  }
+#########################################################
+# EC2 Instanzen (Web + DB)
+#########################################################
 
-  # SSH
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
-  }
+echo "==> Webserver Instanz starten..."
+WEB_INSTANCE_ID=$($AWS ec2 run-instances \
+  --image-id "${AMI_ID}" \
+  --instance-type "${INSTANCE_TYPE}" \
+  --subnet-id "${SUBNET_ID}" \
+  --security-group-ids "${WEB_SG_ID}" \
+  --associate-public-ip-address \
+  --user-data "file://${WEB_USER_DATA}" \
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-web},{Key=Role,Value=web}]" \
+  --query 'Instances[0].InstanceId' \
+  --output text)
+echo "WEB_INSTANCE_ID = ${WEB_INSTANCE_ID}"
 
-  # Alles raus erlaubt
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+echo "==> DB Instanz starten..."
+DB_INSTANCE_ID=$($AWS ec2 run-instances \
+  --image-id "${AMI_ID}" \
+  --instance-type "${INSTANCE_TYPE}" \
+  --subnet-id "${SUBNET_ID}" \
+  --security-group-ids "${DB_SG_ID}" \
+  --associate-public-ip-address \
+  --user-data "file://${DB_USER_DATA}" \
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-db},{Key=Role,Value=db}]" \
+  --query 'Instances[0].InstanceId' \
+  --output text)
+echo "DB_INSTANCE_ID = ${DB_INSTANCE_ID}"
 
-  tags = {
-    Name = "${var.project_name}-db-sg"
-  }
-}
+#########################################################
+# Warten bis Instanzen laufen
+#########################################################
 
-#############################
-# EC2-Instanzen
-#############################
+echo "==> Warte bis Instanzen im Status 'running' sind..."
+$AWS ec2 wait instance-running --instance-ids "${WEB_INSTANCE_ID}" "${DB_INSTANCE_ID}"
 
-# Webserver-Instanz
-resource "aws_instance" "web" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.web_sg.id]
-  key_name               = var.key_name
+#########################################################
+# IP Adressen ausgeben
+#########################################################
 
-  # Hier wird euer vorhandenes Web-Init-Skript eingebunden
-  user_data = file("${path.module}/init_webserver.sh")
+WEB_PUBLIC_IP=$($AWS ec2 describe-instances \
+  --instance-ids "${WEB_INSTANCE_ID}" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+  --output text)
 
-  tags = {
-    Name = "${var.project_name}-web"
-    Role = "web"
-  }
-}
+DB_PRIVATE_IP=$($AWS ec2 describe-instances \
+  --instance-ids "${DB_INSTANCE_ID}" \
+  --query 'Reservations[0].Instances[0].PrivateIpAddress' \
+  --output text)
 
-# DB-Instanz
-resource "aws_instance" "db" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.db_sg.id]
-  key_name               = var.key_name
-
-  # Hier wird euer vorhandenes DB-Init-Skript eingebunden
-  user_data = file("${path.module}/init_database.sh")
-
-  tags = {
-    Name = "${var.project_name}-db"
-    Role = "db"
-  }
-}
-
-#############################
-# Outputs
-#############################
-
-output "web_public_ip" {
-  description = "Öffentliche IP des Webservers (für Nextcloud-Installer)"
-  value       = aws_instance.web.public_ip
-}
-
-output "web_public_dns" {
-  description = "Öffentlicher DNS-Name des Webservers"
-  value       = aws_instance.web.public_dns
-}
-
-output "db_private_ip" {
-  description = "Private IP des DB-Servers (für DB-Host im Nextcloud-Installer)"
-  value       = aws_instance.db.private_ip
-}
+echo
+echo "============== DEPLOYMENT FERTIG =============="
+echo "Webserver oeffentliche IP:   ${WEB_PUBLIC_IP}"
+echo "DB Server private IP:        ${DB_PRIVATE_IP}"
+echo
+echo "Rufe im Browser auf:  http://${WEB_PUBLIC_IP}"
+echo
+echo "Im Nextcloud Installer tragt ihr ein:"
+echo "  Datenbank-Host:     ${DB_PRIVATE_IP}"
+echo "  Datenbank-Name:     nextcloud"
+echo "  Datenbank-Benutzer: nextcloud"
+echo "  Datenbank-Passwort: nextcloud-pass"
+echo "==============================================="
