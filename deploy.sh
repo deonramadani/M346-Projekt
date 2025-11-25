@@ -31,7 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-webserver.sh"
 DB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-db-server.sh"
 
-# Prüfen ob die Dateien existieren
+# Pruefen ob die Dateien existieren
 if [ ! -f "${WEB_USER_DATA_FILE}" ]; then
   echo "FEHLER: ${WEB_USER_DATA_FILE} wurde nicht gefunden."
   exit 1
@@ -56,7 +56,7 @@ echo
 AWS="aws --region ${AWS_REGION}"
 
 #########################################################
-# Ubuntu 22.04 AMI für us-east-1 (N. Virginia)
+# Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)
 #########################################################
 
 echo "==> Setze Ubuntu 22.04 AMI für us-east-1 (N. Virginia)..."
@@ -137,7 +137,7 @@ $AWS ec2 authorize-security-group-ingress \
   --group-id "${WEB_SG_ID}" \
   --ip-permissions IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges="[{CidrIp=0.0.0.0/0}]"
 
-# HTTPS (falls später TLS)
+# HTTPS (falls spaeter TLS)
 $AWS ec2 authorize-security-group-ingress \
   --group-id "${WEB_SG_ID}" \
   --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges="[{CidrIp=0.0.0.0/0}]"
@@ -213,7 +213,7 @@ DB_PRIVATE_IP=$($AWS ec2 describe-instances \
 
 echo
 echo "============== DEPLOYMENT FERTIG =============="
-echo "Webserver öffentliche IP:   ${WEB_PUBLIC_IP}"
+echo "Webserver oeffentliche IP:   ${WEB_PUBLIC_IP}"
 echo "DB Server private IP:       ${DB_PRIVATE_IP}"
 echo
 echo "Rufe im Browser auf:  http://${WEB_PUBLIC_IP}"
