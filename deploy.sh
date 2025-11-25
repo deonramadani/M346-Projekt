@@ -1,21 +1,23 @@
 #!/bin/bash
 # Autor: Armin Hujdur, Jan Speck
 # Datum: 2025-11-24
-# Erklärung: Das Skript baut automatisch die noetige AWS-Infrastruktur auf und startet zwei EC2-Server, auf denen es Webserver, Datenbank und Nextcloud fertig einrichtet.
+# Erklärung: Das Skript baut automatisch die nötige AWS-Infrastruktur auf  und startet zwei EC2-Server, auf denen Webserver, 
+# Datenbank und Nextcloud mit den Init-Skripten aus dem IaC-Ordner eingerichtet werden.
+
 set -e
 
 #########################################################
 # M346 Nextcloud Deployment Script
-# - fuer AWS CloudShell in us-east-1 (N. Virginia)
+# - für AWS CloudShell in us-east-1 (N. Virginia)
 # - erstellt VPC, Subnet, Routing, Security Groups
 # - startet Web- und DB-Server
-# - bettet die Init-Skripte direkt als User Data ein
+# - benutzt IaC/initial-webserver.sh und IaC/initial-db-server.sh
 #########################################################
 
 # Region aus AWS Konfiguration holen (CloudShell hat die schon gesetzt)
 AWS_REGION="${AWS_REGION:-$(aws configure get region)}"
 if [ -z "$AWS_REGION" ]; then
-  echo "Konnte keine AWS Region ermitteln. Bitte in der Console eine Region waehlen."
+  echo "Konnte keine AWS Region ermitteln. Bitte in der Console eine Region wählen."
   exit 1
 fi
 
@@ -24,151 +26,42 @@ VPC_CIDR="10.0.0.0/16"
 PUBLIC_SUBNET_CIDR="10.0.1.0/24"
 INSTANCE_TYPE="t3.micro"
 
+# Pfade zu den IaC-Init-Skripten relativ zur deploy.sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WEB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-webserver.sh"
+DB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-db-server.sh"
+
+# Prüfen ob die Dateien existieren
+if [ ! -f "${WEB_USER_DATA_FILE}" ]; then
+  echo "FEHLER: ${WEB_USER_DATA_FILE} wurde nicht gefunden."
+  exit 1
+fi
+
+if [ ! -f "${DB_USER_DATA_FILE}" ]; then
+  echo "FEHLER: ${DB_USER_DATA_FILE} wurde nicht gefunden."
+  exit 1
+fi
+
 echo "================ DEPLOY KONFIG ================"
 echo "Region:           ${AWS_REGION}"
 echo "Projektname:      ${PROJECT_NAME}"
 echo "VPC CIDR:         ${VPC_CIDR}"
 echo "Subnet CIDR:      ${PUBLIC_SUBNET_CIDR}"
 echo "Instance Type:    ${INSTANCE_TYPE}"
+echo "Web User-Data:    ${WEB_USER_DATA_FILE}"
+echo "DB User-Data:     ${DB_USER_DATA_FILE}"
 echo "================================================"
 echo
 
 AWS="aws --region ${AWS_REGION}"
 
 #########################################################
-# Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)
+# Ubuntu 22.04 AMI für us-east-1 (N. Virginia)
 #########################################################
 
-echo "==> Setze Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)..."
+echo "==> Setze Ubuntu 22.04 AMI für us-east-1 (N. Virginia)..."
 AMI_ID="ami-04b4f1a9cf54c11d0"
 echo "Verwende AMI_ID = ${AMI_ID}"
-echo
-
-#########################################################
-# User-Data Skripte als temporäre Dateien anlegen
-#########################################################
-
-WEB_USER_DATA_FILE="/tmp/web-user-data.sh"
-DB_USER_DATA_FILE="/tmp/db-user-data.sh"
-
-echo "==> Schreibe User-Data Skript fuer Webserver nach ${WEB_USER_DATA_FILE}..."
-cat > "${WEB_USER_DATA_FILE}" << 'EOF'
-#!/bin/bash
-# Autor: Deon Ramadani
-# Datum: 2025-11-21
-# Erklaerung: Dieses Skript installiert und konfiguriert einen Apache-Webserver
-#            mit PHP 8.2 und Nextcloud.
-
-# 1) Aktualisierung der Paketliste
-sudo apt-get update
-
-# 2) Tool fuer add-apt-repository installieren
-sudo apt-get install -y software-properties-common
-
-# 3) PHP 8.2 Repository hinzufuegen und Paketliste aktualisieren
-sudo add-apt-repository ppa:ondrej/php -y
-sudo apt-get update
-
-# 4) Installation des Apache-Webservers
-sudo apt-get install -y apache2
-
-# 5) PHP 8.2 und benoetigte Module installieren
-# Da man sie nicht alle in einem Befehl installieren kann, werden sie einzeln installiert
-
-sudo apt-get install -y php8.2
-
-sudo apt-get install -y libapache2-mod-php8.2
-
-sudo apt-get install -y php8.2-gd
-
-sudo apt-get install -y php8.2-xml
-
-sudo apt-get install -y php8.2-mbstring
-
-sudo apt-get install -y php8.2-curl
-
-sudo apt-get install -y php8.2-zip
-
-sudo apt-get install -y php8.2-mysql
-
-sudo apt-get install -y php8.2-intl
-
-sudo apt-get install -y php8.2-bcmath
-
-sudo apt-get install -y php8.2-gmp
-
-# 6) Apache starten und beim Systemstart aktivieren
-sudo systemctl start apache2
-sudo systemctl enable apache2
-
-# 7) Nextcloud herunterladen und entpacken
-cd /tmp
-wget https://download.nextcloud.com/server/releases/latest.zip -O nextcloud.zip
-sudo apt-get install -y unzip
-sudo unzip nextcloud.zip -d /var/www/
-
-# 8) Rechte fuer den Webserver-Benutzer setzen
-sudo chown -R www-data:www-data /var/www/nextcloud
-sudo chmod -R 755 /var/www/nextcloud
-
-# 9) Apache so konfigurieren, dass Nextcloud die Startseite ist
-sudo sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/nextcloud|' /etc/apache2/sites-available/000-default.conf
-sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/000-default.conf
-
-# 10) Rewrite-Modul aktivieren (wird von Nextcloud benoetigt)
-sudo a2enmod rewrite
-
-# 11) Apache neu starten, damit alle Aenderungen aktiv werden
-sudo systemctl restart apache2
-EOF
-
-chmod +x "${WEB_USER_DATA_FILE}"
-
-echo "==> Schreibe User-Data Skript fuer DB-Server nach ${DB_USER_DATA_FILE}..."
-cat > "${DB_USER_DATA_FILE}" << 'EOF'
-#!/bin/bash
-# Autor: Deon Ramadani
-# Datum: 2025-11-21
-# Erklaerung: Dieses Skript installiert und konfiguriert einen MySQL-Datenbankserver
-
-# 1) Aktualisierung der Paketliste
-sudo apt-get update
-
-# 2) Installation des MySQL-Datenbankservers
-sudo apt-get install -y mysql-server
-
-# 3) Starten und Aktivieren des MySQL-Datenbankservers
-sudo systemctl start mysql
-
-# 4) Sicherstellen, dass der MySQL-Datenbankserver beim Systemstart automatisch gestartet wird
-sudo systemctl enable mysql
-
-# 5) Nextcloud-Datenbank und Benutzer anlegen
-sudo mysql -e "CREATE DATABASE nextcloud CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-sudo mysql -e "CREATE USER 'nextcloud'@'%' IDENTIFIED BY 'nextcloud-pass';"
-sudo mysql -e "GRANT ALL PRIVILEGES ON nextcloud.* TO 'nextcloud'@'%';"
-sudo mysql -e "FLUSH PRIVILEGES;"
-
-# 6) Remote-Zugriff erlauben (bind-address anpassen)
-sudo sed -i "s/^bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/mysql.conf.d/mysqld.cnf
-sudo systemctl restart mysql
-
-# 7) Interne IP-Adresse des Datenbankservers ermitteln
-DB_IP=\$(hostname -I | awk '{print \$1}')
-
-# 8) Verbindungsoptionen fuer Nextcloud ausgeben
-echo "Datenbank-Host: \$DB_IP"
-echo "Datenbank-Name: nextcloud"
-echo "Datenbank-Benutzer: nextcloud"
-echo "Datenbank-Passwort: nextcloud-pass"
-EOF
-
-chmod +x "${DB_USER_DATA_FILE}"
-
-echo
-echo "User-Data Dateien erstellt:"
-echo "  Web: ${WEB_USER_DATA_FILE}"
-echo "  DB:  ${DB_USER_DATA_FILE}"
 echo
 
 #########################################################
@@ -207,7 +100,7 @@ echo "SUBNET_ID = ${SUBNET_ID}"
 # Public IPs automatisch vergeben
 $AWS ec2 modify-subnet-attribute --subnet-id "${SUBNET_ID}" --map-public-ip-on-launch
 
-echo "==> Route-Table fuer Internetzugang..."
+echo "==> Route-Table für Internetzugang..."
 ROUTE_TABLE_ID=$($AWS ec2 create-route-table \
   --vpc-id "${VPC_ID}" \
   --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-rt}]" \
@@ -233,7 +126,7 @@ echo "==> Security Groups erstellen..."
 # Webserver SG: HTTP/HTTPS aus dem Internet
 WEB_SG_ID=$($AWS ec2 create-security-group \
   --group-name "${PROJECT_NAME}-web-sg" \
-  --description "Security Group fuer Webserver" \
+  --description "Security Group für Webserver" \
   --vpc-id "${VPC_ID}" \
   --query 'GroupId' \
   --output text)
@@ -244,7 +137,7 @@ $AWS ec2 authorize-security-group-ingress \
   --group-id "${WEB_SG_ID}" \
   --ip-permissions IpProtocol=tcp,FromPort=80,ToPort=80,IpRanges="[{CidrIp=0.0.0.0/0}]"
 
-# HTTPS (falls spaeter TLS)
+# HTTPS (falls später TLS)
 $AWS ec2 authorize-security-group-ingress \
   --group-id "${WEB_SG_ID}" \
   --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges="[{CidrIp=0.0.0.0/0}]"
@@ -252,7 +145,7 @@ $AWS ec2 authorize-security-group-ingress \
 # DB SG: MySQL nur aus VPC (inkl. Webserver)
 DB_SG_ID=$($AWS ec2 create-security-group \
   --group-name "${PROJECT_NAME}-db-sg" \
-  --description "Security Group fuer DB-Server" \
+  --description "Security Group für DB-Server" \
   --vpc-id "${VPC_ID}" \
   --query 'GroupId' \
   --output text)
@@ -320,8 +213,8 @@ DB_PRIVATE_IP=$($AWS ec2 describe-instances \
 
 echo
 echo "============== DEPLOYMENT FERTIG =============="
-echo "Webserver oeffentliche IP:   ${WEB_PUBLIC_IP}"
-echo "DB Server private IP:        ${DB_PRIVATE_IP}"
+echo "Webserver öffentliche IP:   ${WEB_PUBLIC_IP}"
+echo "DB Server private IP:       ${DB_PRIVATE_IP}"
 echo
 echo "Rufe im Browser auf:  http://${WEB_PUBLIC_IP}"
 echo
