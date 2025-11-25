@@ -1,14 +1,14 @@
 #!/bin/bash
 # Autor: Armin Hujdur, Jan Speck
 # Datum: 2025-11-24
-# Erklärung: Das Skript baut automatisch die nötige AWS-Infrastruktur auf  und startet zwei EC2-Server, auf denen Webserver, 
+# Erklaerung: Das Skript baut automatisch die noetige AWS-Infrastruktur auf  und startet zwei EC2-Server, auf denen Webserver, 
 # Datenbank und Nextcloud mit den Init-Skripten aus dem IaC-Ordner eingerichtet werden.
 
 set -e
 
 #########################################################
 # M346 Nextcloud Deployment Script
-# - für AWS CloudShell in us-east-1 (N. Virginia)
+# - fuer AWS CloudShell in us-east-1 (N. Virginia)
 # - erstellt VPC, Subnet, Routing, Security Groups
 # - startet Web- und DB-Server
 # - benutzt IaC/initial-webserver.sh und IaC/initial-db-server.sh
@@ -17,7 +17,7 @@ set -e
 # Region aus AWS Konfiguration holen (CloudShell hat die schon gesetzt)
 AWS_REGION="${AWS_REGION:-$(aws configure get region)}"
 if [ -z "$AWS_REGION" ]; then
-  echo "Konnte keine AWS Region ermitteln. Bitte in der Console eine Region wählen."
+  echo "Konnte keine AWS Region ermitteln. Bitte in der Console eine Region waehlen."
   exit 1
 fi
 
@@ -59,7 +59,7 @@ AWS="aws --region ${AWS_REGION}"
 # Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)
 #########################################################
 
-echo "==> Setze Ubuntu 22.04 AMI für us-east-1 (N. Virginia)..."
+echo "==> Setze Ubuntu 22.04 AMI fuer us-east-1 (N. Virginia)..."
 AMI_ID="ami-04b4f1a9cf54c11d0"
 echo "Verwende AMI_ID = ${AMI_ID}"
 echo
@@ -100,7 +100,7 @@ echo "SUBNET_ID = ${SUBNET_ID}"
 # Public IPs automatisch vergeben
 $AWS ec2 modify-subnet-attribute --subnet-id "${SUBNET_ID}" --map-public-ip-on-launch
 
-echo "==> Route-Table für Internetzugang..."
+echo "==> Route-Table fuer Internetzugang..."
 ROUTE_TABLE_ID=$($AWS ec2 create-route-table \
   --vpc-id "${VPC_ID}" \
   --tag-specifications "ResourceType=route-table,Tags=[{Key=Name,Value=${PROJECT_NAME}-public-rt}]" \
@@ -126,7 +126,7 @@ echo "==> Security Groups erstellen..."
 # Webserver SG: HTTP/HTTPS aus dem Internet
 WEB_SG_ID=$($AWS ec2 create-security-group \
   --group-name "${PROJECT_NAME}-web-sg" \
-  --description "Security Group für Webserver" \
+  --description "Security Group fuer Webserver" \
   --vpc-id "${VPC_ID}" \
   --query 'GroupId' \
   --output text)
@@ -145,7 +145,7 @@ $AWS ec2 authorize-security-group-ingress \
 # DB SG: MySQL nur aus VPC (inkl. Webserver)
 DB_SG_ID=$($AWS ec2 create-security-group \
   --group-name "${PROJECT_NAME}-db-sg" \
-  --description "Security Group für DB-Server" \
+  --description "Security Group fuer DB-Server" \
   --vpc-id "${VPC_ID}" \
   --query 'GroupId' \
   --output text)
