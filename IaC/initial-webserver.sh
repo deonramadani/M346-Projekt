@@ -61,8 +61,37 @@ sudo chown -R www-data:www-data /var/www/nextcloud
 sudo chmod -R 755 /var/www/nextcloud
 
 # 9) Apache so konfigurieren, dass Nextcloud die Startseite ist
-sudo sed -i 's|DocumentRoot .*|DocumentRoot /var/www/nextcloud|' /etc/apache2/sites-available/000-default.conf
-sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/000-default.conf
+
+IP_WEB_SERVER="$(curl -s https://ifconfig.me)"
+
+cat > /etc/apache2/sites-available/nextcloud.conf <<EOF
+<VirtualHost *:80>
+    ServerAdmin xxxx
+    DocumentRoot /var/www/nextcloud/
+    ServerName $IP_WEB_SERVER
+<Directory /var/www/nextcloud/>
+        Options +FollowSymlinks
+        AllowOverride All
+        Require all granted
+<IfModule mod_dav.c>
+            Dav off
+</IfModule>
+        SetEnv HOME /var/www/nextcloud
+        SetEnv HTTP_HOME /var/www/nextcloud
+</Directory>
+    ErrorLog /var/log/apache2/nextcloud_error.log
+    CustomLog /var/log/apache2/nextcloud_access.log combined
+</VirtualHost>
+EOF
+ 
+# Apache Site aktivieren und Standardseite deaktivieren
+a2dissite 000-default.conf
+a2ensite nextcloud.conf
+systemctl reload apache2
+
+# sudo sed -i 's|DocumentRoot .*|DocumentRoot /var/www/nextcloud|' /etc/apache2/sites-available/000-default.conf
+# sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/000-default.conf
+
 
 
 # 10) Rewrite-Modul aktivieren (wird von Nextcloud benötigt)
