@@ -26,7 +26,10 @@ VPC_CIDR="10.0.0.0/16"
 PUBLIC_SUBNET_CIDR="10.0.1.0/24"
 INSTANCE_TYPE="t3.micro"
 
-
+# Pfade relativ zur deploy.sh ermitteln
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+WEB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-webserver.sh"
+DB_USER_DATA_FILE="${SCRIPT_DIR}/IaC/initial-db-server.sh"
 
 # Pruefen ob die Dateien existieren
 if [ ! -f "${WEB_USER_DATA_FILE}" ]; then
@@ -168,7 +171,7 @@ WEB_INSTANCE_ID=$($AWS ec2 run-instances \
   --subnet-id "${SUBNET_ID}" \
   --security-group-ids "${WEB_SG_ID}" \
   --associate-public-ip-address \
-  --user-data file://./IaC/initial-webserver.sh \
+  --user-data file://${WEB_USER_DATA_FILE} \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-web},{Key=Role,Value=web}]" \
   --query 'Instances[0].InstanceId' \
   --output text)
@@ -181,7 +184,7 @@ DB_INSTANCE_ID=$($AWS ec2 run-instances \
   --subnet-id "${SUBNET_ID}" \
   --security-group-ids "${DB_SG_ID}" \
   --associate-public-ip-address \
-  --user-data file://./IaC/initial-db-server.sh \
+  --user-data file://${DB_USER_DATA_FILE} \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${PROJECT_NAME}-db},{Key=Role,Value=db}]" \
   --query 'Instances[0].InstanceId' \
   --output text)
