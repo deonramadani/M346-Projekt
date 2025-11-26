@@ -4,6 +4,8 @@
 # Erklärung: Dieses Skript installiert und konfiguriert einen Apache-Webserver
 #            mit PHP 8.2 und Nextcloud.
 
+set -e
+
 # 1) Aktualisierung der Paketliste
 sudo apt-get update
 
@@ -46,10 +48,12 @@ sudo apt-get install -y php8.2-gmp
 sudo systemctl start apache2
 sudo systemctl enable apache2
 
+# wget installieren
+sudo apt-get install -y wget unzip
+
 # 7) Nextcloud herunterladen und entpacken
 cd /tmp
 wget https://download.nextcloud.com/server/releases/latest.zip -O nextcloud.zip
-sudo apt-get install -y unzip
 sudo unzip nextcloud.zip -d /var/www/
 
 # 8) Rechte für den Webserver-Benutzer setzen
@@ -62,6 +66,9 @@ sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/
 
 # 10) Rewrite-Modul aktivieren (wird von Nextcloud benötigt)
 sudo a2enmod rewrite
+
+# 11) AllowOverride aktivieren, damit Nextclouds .htaccess/rewrites greifen
+sudo sed -i '/DocumentRoot \/var\/www\/nextcloud/a \<Directory /var/www/nextcloud/>\n\tAllowOverride All\n</Directory>' /etc/apache2/sites-available/000-default.conf
 
 # 11) Apache neu starten, damit alle Änderungen aktiv werden
 sudo systemctl restart apache2
