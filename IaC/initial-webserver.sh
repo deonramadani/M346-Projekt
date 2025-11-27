@@ -1,104 +1,58 @@
-#!/bin/bash
-# Autor: Deon Ramadani
-# Datum: 2025-11-21
-# Erklärung: Dieses Skript installiert und konfiguriert einen Apache-Webserver
-#            mit PHP 8.2 und Nextcloud.
+#!/bin/bash -xe
 
-set -e
+export DEBIAN_FRONTEND=noninteractive
 
-# 1) Aktualisierung der Paketliste
-sudo apt-get update
+# 1) Apache + PHP installieren
+sudo apt-get update -y
 
-# 2) Tool für add-apt-repository installieren
-sudo apt-get install -y software-properties-common
+sudo apt-get install -y \
+  apache2 wget unzip \
+  php php-cli libapache2-mod-php \
+  php-gd php-mbstring php-xml php-zip \
+  php-curl php-intl php-bcmath php-gmp php-mysql
 
-# 3) PHP 8.2 Repository hinzufügen und Paketliste aktualisieren
-sudo add-apt-repository ppa:ondrej/php -y
-sudo apt-get update
+# 2) Apache-Module aktivieren
+sudo a2enmod rewrite headers env dir mime ssl
 
-# 4) Installation des Apache-Webservers
-sudo apt-get install -y apache2
-
-# 5) PHP 8.2 und benötigte Module installieren
-# Da man sie nicht alle in einem Befehl installieren kann, werden sie einzeln installiert
-
-sudo apt-get install -y php8.2
-
-sudo apt-get install -y libapache2-mod-php8.2
-
-sudo apt-get install -y php8.2-gd
-
-sudo apt-get install -y php8.2-xml
-
-sudo apt-get install -y php8.2-mbstring
-
-sudo apt-get install -y php8.2-curl
-
-sudo apt-get install -y php8.2-zip
-
-sudo apt-get install -y php8.2-mysql
-
-sudo apt-get install -y php8.2-intl
-
-sudo apt-get install -y php8.2-bcmath
-
-sudo apt-get install -y php8.2-gmp
-
-# 6) Apache starten und beim Systemstart aktivieren
-sudo systemctl start apache2
 sudo systemctl enable apache2
+sudo systemctl start apache2
 
-# wget installieren
-sudo apt-get install -y wget unzip
+# 3) Nextcloud herunterladen
+NEXTCLOUD_VERSION="${NEXTCLOUD_VERSION:-latest}"
 
-# 7) Nextcloud herunterladen und entpacken
 cd /tmp
-wget https://download.nextcloud.com/server/releases/latest.zip -O nextcloud.zip
-sudo unzip nextcloud.zip -d /var/www/
+sudo rm -rf nextcloud nextcloud.zip
 
-# 8) Rechte für den Webserver-Benutzer setzen
+wget -q "https://download.nextcloud.com/server/releases/${NEXTCLOUD_VERSION}.zip" -O nextcloud.zip
+unzip nextcloud.zip
+sudo rm nextcloud.zip
+
+# 4) Nextcloud nach /var/www/nextcloud verschieben
+sudo rm -rf /var/www/nextcloud
+sudo mv nextcloud /var/www/nextcloud
+
+# 5) Rechte setzen
 sudo chown -R www-data:www-data /var/www/nextcloud
-sudo chmod -R 755 /var/www/nextcloud
+sudo find /var/www/nextcloud/ -type d -exec chmod 750 {} \;
+sudo find /var/www/nextcloud/ -type f -exec chmod 640 {} \;
 
-# 9) Apache so konfigurieren, dass Nextcloud die Startseite ist
+# 6) Apache-VHost so ändern, dass direkt Nextcloud die Startseite ist
+sudo sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/nextcloud|' \
+  /etc/apache2/sites-available/000-default.conf
 
-IP_WEB_SERVER="$(curl -s https://ifconfig.me)"
+# Falls noch eine Standardindex-Datei existiert, löschen
+sudo rm -f /var/www/html/index.html
 
-cat > /etc/apache2/sites-available/nextcloud.conf <<EOF
-<VirtualHost *:80>
-    ServerAdmin xxxx
-    DocumentRoot /var/www/nextcloud/
-    ServerName $IP_WEB_SERVER
-<Directory /var/www/nextcloud/>
-        Options +FollowSymlinks
-        AllowOverride All
-        Require all granted
-<IfModule mod_dav.c>
-            Dav off
-</IfModule>
-        SetEnv HOME /var/www/nextcloud
-        SetEnv HTTP_HOME /var/www/nextcloud
+# 7) Directory-Konfiguration für Nextcloud
+cat << 'EOF' | sudo tee /etc/apache2/conf-available/nextcloud.conf
+<Directory /var/www/nextcloud>
+    Require all granted
+    AllowOverride All
+    Options FollowSymLinks MultiViews
 </Directory>
-    ErrorLog /var/log/apache2/nextcloud_error.log
-    CustomLog /var/log/apache2/nextcloud_access.log combined
-</VirtualHost>
 EOF
- 
-# Apache Site aktivieren und Standardseite deaktivieren
-a2dissite 000-default.conf
-a2ensite nextcloud.conf
-systemctl reload apache2
 
-# sudo sed -i 's|DocumentRoot .*|DocumentRoot /var/www/nextcloud|' /etc/apache2/sites-available/000-default.conf
-# sudo sed -i 's|/var/www/html|/var/www/nextcloud|g' /etc/apache2/sites-available/000-default.conf
+sudo a2enconf nextcloud
 
-
-
-# 10) Rewrite-Modul aktivieren (wird von Nextcloud benötigt)
-sudo a2enmod rewrite
-
-# 11) AllowOverride aktivieren, damit Nextclouds .htaccess/rewrites greifen
-sudo sed -i '/DocumentRoot \/var\/www\/nextcloud/a \<Directory /var/www/nextcloud/>\n\tAllowOverride All\n</Directory>' /etc/apache2/sites-available/000-default.conf
-
-# 11) Apache neu starten, damit alle Änderungen aktiv werden
-sudo systemctl restart apache2
+# 8) Apache neu laden
+sudo systemctl reload apache2
