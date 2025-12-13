@@ -178,7 +178,55 @@ Zum Schluss wird die interne IP-Adresse des Datenbankservers ermittelt. Diese IP
 <br><br>
 
 ## 2.4 deploy.sh 
+Das Skript deploy.sh bildet das zentrale Element der Automatisierung dieses Projekts. Es ist verantwortlich für den vollständigen Aufbau der AWS-Infrastruktur sowie für das Starten der beiden EC2-Instanzen, welche als Webserver und Datenbankserver dienen. Die eigentliche Installation und Konfiguration von Nextcloud und MySQL erfolgt über sogenannte User-Data-Skripte, die beim Start der Instanzen automatisch ausgeführt werden.
 
+**Vorbereitung und Konfiguration**
+
+Zu Beginn des Skripts wird mit set -e sichergestellt, dass das Deployment sofort abgebrochen wird, sobald ein Fehler auftritt. Dadurch wird verhindert, dass eine unvollständige oder fehlerhafte Infrastruktur erstellt wird.
+
+Anschliessend wird die AWS-Region automatisch aus der CloudShell-Konfiguration gelesen. Diese Information ist notwendig, damit alle AWS-CLI-Befehle in der korrekten Region ausgeführt werden. Zusätzlich werden zentrale Variablen definiert, darunter der Projektname, der IP-Adressbereich der VPC, das Public Subnet sowie der verwendete Instanztyp.
+
+Damit die User-Data-Skripte korrekt geladen werden können, werden die Dateipfade relativ zur deploy.sh ermittelt. Das Skript prüft danach, ob die Dateien IaC/initial-webserver.sh und IaC/initial-db-server.sh vorhanden sind. Falls eine dieser Dateien fehlt, wird das Deployment abgebrochen und eine Fehlermeldung ausgegeben.
+
+**Auswahl des Betriebssystems**
+
+Für beide EC2-Instanzen wird eine feste Ubuntu 22.04 AMI für die Region us-east-1 (N. Virginia) verwendet. Durch die feste AMI-ID wird sichergestellt, dass alle Instanzen auf dem gleichen, getesteten Betriebssystem basieren und sich identisch verhalten.
+
+**Aufbau der Netzwerkstruktur**
+
+Im nächsten Schritt erstellt das Skript die komplette Netzwerkumgebung in AWS:
+
+Zuerst wird eine Virtual Private Cloud (VPC) mit dem Adressbereich 10.0.0.0/16 erstellt. Zusätzlich werden DNS-Unterstützung und DNS-Hostnames aktiviert, um eine korrekte Namensauflösung innerhalb der VPC zu ermöglichen.
+
+Danach wird ein Internet Gateway erstellt und mit der VPC verbunden. Dieses Gateway erlaubt den Instanzen im Public Subnet den Zugriff auf das Internet, was für Updates und die Installation von Software notwendig ist.
+
+Anschliessend wird ein Public Subnet mit dem Adressbereich 10.0.1.0/24 angelegt. Dieses Subnet ist so konfiguriert, dass neu gestartete Instanzen automatisch eine öffentliche IPv4-Adresse erhalten.
+
+Damit der Internetzugang funktioniert, wird eine Route Table erstellt und mit einer Default-Route (0.0.0.0/0) zum Internet Gateway versehen. Diese Route Table wird anschliessend dem Public Subnet zugewiesen.
+
+**Security Groups**
+
+Zur Absicherung der Infrastruktur werden zwei getrennte Security Groups erstellt:
+
+Die Webserver Security Group erlaubt eingehenden Datenverkehr auf den Ports 80 (HTTP) und 443 (HTTPS) aus dem Internet. Dadurch kann die Nextcloud-Instanz später über einen Webbrowser erreicht werden.
+
+Die Datenbank Security Group erlaubt Verbindungen auf Port 3306 (MySQL) ausschliesslich aus dem internen VPC-Netz. Dadurch ist die Datenbank nicht direkt aus dem Internet erreichbar, sondern nur für den Webserver innerhalb der VPC zugänglich.
+
+**Start der EC2-Instanzen**
+
+Nach der Netzwerkkonfiguration startet das Skript zwei EC2-Instanzen:
+
+Die Webserver-Instanz wird mit der Webserver Security Group gestartet und erhält das User-Data-Skript initial-webserver.sh. Dieses Skript installiert Apache, PHP und Nextcloud und konfiguriert den Webserver so, dass Nextcloud direkt über die Serveradresse erreichbar ist.
+
+Die Datenbank-Instanz wird mit der Datenbank Security Group gestartet und erhält das User-Data-Skript initial-db-server.sh. Dieses Skript installiert MySQL, erstellt die notwendige Datenbank sowie den Benutzer und konfiguriert den Zugriff für den Webserver.
+
+Beide Instanzen werden mit aussagekräftigen Tags versehen, um sie in der AWS-Management-Console eindeutig identifizieren zu können.
+
+**Abschluss und Ausgabe der Zugangsdaten**
+
+Das Skript wartet anschliessend, bis beide Instanzen den Status running erreicht haben. Danach werden automatisch die öffentliche IP-Adresse des Webservers sowie die private IP-Adresse des Datenbankservers ausgelesen.
+
+Zum Schluss gibt das Skript alle relevanten Informationen in der Konsole aus. Dazu gehören die URL für den Zugriff auf Nextcloud sowie die benötigten Datenbank-Zugangsdaten. Diese Angaben werden im Nextcloud-Installationsassistenten verwendet, um die Installation abzuschliessen.
 <br><br>
 
 # 3. Testfälle
