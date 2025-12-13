@@ -8,8 +8,9 @@
 #### 1.4 Aufgabenverteilung
 ### **2. Vorgehen**
 #### 2.1 Planung
-#### 2.2 Initial-scripts
-#### 2.3 deploy.sh 
+#### 2.2 Git-Repo aufsetzen
+#### 2.3 Initial-scripts
+#### 2.4 deploy.sh 
 ### **3. Testfälle**
 #### 3.1 Testfall 1
 #### 3.2 Testfall 2
@@ -44,7 +45,9 @@ Ein zusätzliches Ziel ist die Durchführung verschiedener Testfälle. Diese Tes
 <br>
 
 ## 1.3 Was ist Nextcloud?
-Nextcloud ist eine Open-Source-Software für den Betrieb einer eigenen Cloud-Plattform. Sie ermöglicht es, Dateien, Kalender, Kontakte und weitere Daten zentral zu speichern, zu verwalten und mit anderen Benutzerinnen und Benutzern zu teilen. Im Gegensatz zu kommerziellen Cloud-Diensten wie Google Drive oder OneDrive wird Nextcloud auf einem eigenen Server betrieben, wodurch die volle Kontrolle über Daten und Zugriffe erhalten bleibt.
+[Nextcloud](https://nextcloud.com/de/) ist eine Open-Source-Software für den Betrieb einer eigenen Cloud-Plattform. Sie ermöglicht es, Dateien, Kalender, Kontakte und weitere Daten zentral zu speichern, zu verwalten und mit anderen Benutzerinnen und Benutzern zu teilen. Im Gegensatz zu kommerziellen Cloud-Diensten wie Google Drive oder OneDrive wird Nextcloud auf einem eigenen Server betrieben, wodurch die volle Kontrolle über Daten und Zugriffe erhalten bleibt. 
+<br><br>
+<img src="./BilderDokumentation/Nextcloud.png" alt="Nextcloud" width="300">
 
 <br>
 
@@ -58,5 +61,121 @@ Bezüglich der Dokumentation haben wir nichts wirklich eine klare Verteilung gem
 
 # 2. Vorgehen
 ## 2.1 Planung
-Bevor wir angefangen haben, haben wir zuerst angeschaut welche Cloud Infrastruktur wir benötigen um das Projekt zu realisieren. 
+Bevor wir mit dem Projekt begonnen haben, haben wir uns zunächst angeschaut, welche Cloud-Infrastruktur benötigt wird, um das Projekt zu realisieren. Wir haben uns für eine VPC entschieden. Die VPC ist über ein Internet Gateway mit dem Internet verbunden. Innerhalb der VPC befindet sich ein Public Subnet, in dem zwei EC2-Instanzen betrieben werden. Eine Instanz wird als Webserver verwendet, die andere Instanz dient als Datenbankserver. Die Kommunikation zwischen dem Webserver und dem Datenbankserver erfolgt innerhalb der VPC. Der Zugriff von aussen ist jedoch nur bis zum Webserver möglich.
+
+<img src="./BilderDokumentation/AWS-Netzplan.png" alt="Nextcloud" width="500">
+
+<br><br>
+
+## 2.2 Git-Repo aufsetzen
+Damit wir unser Projekt in einer Versionverwaltungs betreiben können, haben wir nach der Plannung angefangen das Git-Repository aufzusetzten. [Github](https://github.com/) ist ein Versionverwaltungs tool welches sich unserer Meinung nach sehr einfach bedienen lässt. Bevor uns also an das Scripten gesetzt haben, haben wir das Git-Repository aufgesetzt. Dafür haben wir diese Sache ausgefüllt:
+<br><br>
+<img src="./BilderDokumentation/GitRepo-Aufsetzten.png" alt="Nextcloud" width="500">
+| Begriff | Beschreibung |
+|--------|--------------|
+| Repository name  | M346-Projekt |
+| Description | Das ist das Git Repository von der Gruppe Armin Hujdur, Jan Speck und Deon Ramadani |
+| Choose visibillity | public |
+| Add READMEE | On |
+| Add .gitignore | No .gitignore |
+| Add license | No licence |
+
+<br>
+Nachdem wir das Git-Repository erstellt haben, konnten wird das Repository auf unsere Rechner Clonen
+<br><br>
+
+```
+git clone https://github.com/deonramadani/M346-Projekt.git
+```
+So hatten wir ein fertiges Versionverwaltungssystem mitwelchem wir unsere Scripts bearbeiten und verwalten können.
+
+<br><br>
+
+## 2.3 Initial-Scripts
+Nachdem wir die Versionsverwaltung eingerichtet haben, konnten wird endlich anfangen die Scripts zu erstellen. Angefangen hat Deon mit den Initial Scripts. Diese sind für das Infrastrukture as Code (IaC) zuständig. Mit dieser Methode konnten wir unsere Scripts in jeder Cloudumgebung direkt implementieren. In rahmen dieses Projektes mussten wird zwei Initialscripts erstellen. Eins für den [Webserver](/IaC/initial-webserver.sh) und eins für den [Datenbank-Server](/IaC/initial-db-server.sh). Angefangen habe ich mit dem Webserver Script. 
+<br>
+
+**Initial Webserver**
+
+Damit Nextcloud erfolgreich auf dem Webserver laufen kann, musste ich folgende Packete installieren:
+
+- Apache2
+- PHP (Grundinstallation)
+  - PHP
+  - php-cli
+  - libapache2-mod-php
+
+- PHP-Erweiterungen
+  - php-gd 
+
+  - php-mbstring 
+
+  - php-xml 
+
+  - php-zip 
+
+  - php-curl 
+
+  - php-intl 
+
+  - php-bcmath
+
+  - php-gmp 
+
+  - php-mysql 
+
+Diese PHP Erweiterungen werden von Nextcloud benötigt um richtitg zu funtionieren. Neben den PHP Packeten habe ich noch wget und unzip installiert.
+<br>
+
+**Nextcloud nach /var/www/nextcloud verschieben**
+
+Nachdem alle notwendigen Installationen fertig waren, habe ich begonnen, die Nextcloud-Dateien nach /var/www/nextcloud zu verschieben. Dieses Verzeichnis wird vom Apache-Webserver als Speicherort für Webanwendungen verwendet. Damit Apache die Nextcloud-Dateien ausliefern kann, müssen sie sich innerhalb dieses Verzeichnisses befinden. Durch das Verschieben der Dateien wird sichergestellt, dass Nextcloud über den Webserver erreichbar ist und korrekt ausgeführt werden kann.
+<br>
+
+
+**Rechte setzen**
+
+Nachdem die Nextcloud-Dateien im richtigen Verzeichnis abgelegt wurden, habe ich die Dateirechte angepasst. Der Besitzer aller Dateien und Ordner wurde auf den Webserver-Benutzer www-data gesetzt, damit Apache auf die Nextcloud-Dateien zugreifen kann. Zusätzlich wurden die Zugriffsrechte für Ordner und Dateien eingeschränkt. Dadurch wird sichergestellt, dass Nextcloud korrekt funktioniert und gleichzeitig unnötige Zugriffe verhindert werden.
+<br>
+
+**Nexctloud als Startseite**
+
+Damit Nextcloud direkt über die Server-URL erreichbar ist, wurde das DocumentRoot von Apache angepasst. Anstelle des Standardverzeichnisses /var/www/html wird nun das Verzeichnis /var/www/nextcloud verwendet. Dadurch lädt Apache beim Aufruf der Server-Adresse automatisch die Nextcloud-Anwendung.
+<br>
+
+**Directory-Konfiguration für Nextcloud**
+
+Zum Schluss wurde eine zusätzliche Apache-Konfigurationsdatei für Nextcloud erstellt. In dieser wird festgelegt, dass der Zugriff auf das Nextcloud-Verzeichnis erlaubt ist und dass Apache die von Nextcloud benötigten .htaccess-Dateien auswerten darf. Diese Konfiguration ist notwendig, damit Nextcloud korrekt funktioniert und alle internen Einstellungen angewendet werden können.
+
+**Apache neu laden**
+
+Nachdem die Konfigurationsdatei für Nextcloud erstellt wurde, wird diese aktiviert, damit Apache die neuen Einstellungen berücksichtigt. Anschliessend wird der Apache-Webserver neu geladen, damit alle vorgenommenen Konfigurationsänderungen übernommen werden.
+
+---
+<br><br>
+
+**Initial Datenbank-Server**
+
+Damit Nextcloud seine Daten speichern kann, brauchen wir eine Datenbank. Auch diese wird auf der zweiten EC2 Instanz laufen. Dafür haben wir folgende Packete installisert:
+ 
+-   MySQL Datenbank Server
+
+Sobald die Installation abgeschlossen ist, wird der MySQL-Dienst gestartet und so eingerichtet, dass er beim Systemstart automatisch wieder hochfährt. Dadurch ist sichergestellt, dass die Datenbank immer verfügbar ist, auch nach einem Neustart des Servers.
+
+**Datenbank und Benutzer erstellen**
+
+Im nächsten Schritt wird die Datenbank für Nextcloud vorbereitet. Dazu wird eine Datenbank mit dem Namen nextcloud erstellt. Zusätzlich wird ein eigener Datenbankbenutzer nextcloud angelegt und mit einem Passwort versehen. Dieser Benutzer erhält alle benötigten Rechte auf die Nextcloud-Datenbank, damit Nextcloud später Daten speichern und lesen kann. Anschliessend werden die Änderungen mit FLUSH PRIVILEGES übernommen.
+
+**Remote-Zugriff erlauben (bind-address anpassen)**
+
+Damit der Webserver eine Verbindung zur Datenbank herstellen kann, wird danach der Remote-Zugriff erlaubt. Dafür wird in der MySQL-Konfiguration die bind-address so angepasst, dass MySQL nicht nur lokal, sondern auch über das Netzwerk erreichbar ist. Damit diese Änderung aktiv wird, wird der MySQL-Dienst neu gestartet.
+
+**Verbindungsoptionen für Nextcloud ausgeben**
+
+Zum Schluss wird die interne IP-Adresse des Datenbankservers ermittelt. Diese IP-Adresse wird zusammen mit dem Datenbanknamen, dem Benutzer und dem Passwort in der Konsole ausgegeben. Diese Angaben werden später im Nextcloud-Installationsassistenten benötigt, um die Verbindung zur Datenbank korrekt einzutragen.
+
+---
+<br><br>
+
+## 2.4 deploy.sh 
 
