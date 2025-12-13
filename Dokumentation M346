@@ -23,38 +23,39 @@
 
 # 1. Einleitung
 ## 1.1 Aufgabenstellung
-In dieser Projektarbeit wird Nextcloud in der Community Edition installiert. Dafür wird die Archiv-Variante verwendet. Es wird bewusst kein Docker und kein Web Installer eingesetzt, damit der Installationsprozess Schritt für Schritt nachvollziehbar bleibt.
+In dieser Projektarbeit wird Nextcloud in der Community Edition installiert. Dafür wird die Archiv-Variante verwendet. Es wird bewusst auf Docker und den Web Installer verzichtet, damit der Installationsprozess Schritt für Schritt nachvollziehbar bleibt.
 
 Der Datenbankserver wird auf einem separaten Server eingerichtet. Dieser Server wird so konfiguriert, dass er mit Nextcloud zusammenarbeiten kann. Dadurch sind die Anwendung und die Datenbank klar voneinander getrennt, wie es auch in vielen realen Cloud-Umgebungen der Fall ist.
 
-Beim Aufruf der Nextcloud-URL soll im Webbrowser der Installationsassistent von Nextcloud erscheinen. Über diesen Assistenten wird die Anwendung fertig eingerichtet.
+Beim Aufruf der Nextcloud-URL erscheint im Webbrowser der Installationsassistent von Nextclou. Über diesen Assistenten wird die Anwendung fertig eingerichtet.
 
-Die für die Installation benötigten Angaben zur Datenbankverbindung zum Beispiel Datenbankname, Benutzername und Passwort werden in der Konsole ausgegeben. Diese Informationen können anschliessend im Installationsassistenten eingetragen werden. Bei der Umsetzung werden die vorgegebenen Bewertungskriterien berücksichtigt.
+Die für die Installation benötigten Angaben zur Datenbankverbindung, wie Datenbankname, Benutzername und Passwort werden in der Konsole ausgegeben. Diese Informationen werden anschliessend im Installationsassistenten eingetrage. Bei der Umsetzung werden die vorgegebenen Bewertungskriterien berücksichtigt.
 
 <br><br>
 
 ## 1.2 Ziele:
-In dieser Projektarbeit sollen mehrere wichtige Ziele erreicht werden. Der erste Schwerpunkt liegt auf der erfolgreichen Installation und dem Betrieb eines funktionierenden Cloud-Services. Dieser Service muss stabil laufen und alle Anforderungen erfüllen, die im weiteren Verlauf der Dokumentation beschrieben werden.
+In dieser Projektarbeit verfolgen wir mehrere wichtige Ziele. Der erste Schwerpunkt liegt auf der erfolgreichen Installation und dem stabilen Betrieb eines funktionierenden Cloud-Services. Dieser Service soll alle in der Dokumentation beschriebenen Anforderungen erfüllen.
 
 Ein weiteres Ziel besteht darin, den gesamten Service mithilfe von Infrastructure as Code umzusetzen. Dadurch soll die Installation jederzeit reproduzierbar sein und ohne grossen Aufwand erneut in einer Cloudumgebung gestartet werden können. Alle verwendeten Konfigurationsdateien werden in einer Versionsverwaltung abgelegt, damit jede Änderung klar nachvollziehbar bleibt.
 
-Auch die Dokumentation spielt eine Rolle. Sie wird vollständig in Markdown erstellt und im gleichen Git-Repository wie die Konfigurationsdateien abgelegt. So bleibt die gesamte Projektarbeit übersichtlich strukturiert und an einem Ort verbunden.
+Auch die Dokumentation spielt eine wichtige Rolle. Sie wird vollständig in Markdown erstellt und im gleichen Git-Repository wie die Konfigurationsdateien abgelegt. Dadurch bleibt die Projektarbeit übersichtlich strukturiert und zentral verfügbar.
 
-Ein zusätzliches Ziel ist die Durchführung verschiedener Testfälle. Diese Tests müssen sorgfältig ausgeführt, mit Screenshots dokumentiert und verständlich beschrieben werden. Auf diese Weise kann am Ende klar gezeigt werden, dass der Service korrekt funktioniert und alle Anforderungen erfüllt.
+Zusätzlich führen wir verschiedene Testfälle durch. Diese werden dokumentiert und nachvollziehbar beschrieben, sodass am Ende klar ersichtlich ist, dass der Service korrekt funktioniert und alle Anforderungen erfüllt.
 
 <br>
 
 ## 1.3 Was ist Nextcloud?
-[Nextcloud](https://nextcloud.com/de/) ist eine Open-Source-Software für den Betrieb einer eigenen Cloud-Plattform. Sie ermöglicht es, Dateien, Kalender, Kontakte und weitere Daten zentral zu speichern, zu verwalten und mit anderen Benutzerinnen und Benutzern zu teilen. Im Gegensatz zu kommerziellen Cloud-Diensten wie Google Drive oder OneDrive wird Nextcloud auf einem eigenen Server betrieben, wodurch die volle Kontrolle über Daten und Zugriffe erhalten bleibt. 
+[Nextcloud](https://nextcloud.com/de/) ist eine Open-Source-Software für den Betrieb einer eigenen Cloud-Plattform. Sie ermöglicht es, Dateien, Kalender, Kontakte und weitere Daten zentral zu speichern, zu verwalten und mit anderen Benutzerinnen und Benutzern zu teilen. Im Gegensatz zu kommerziellen Cloud-Diensten wie Google Drive oder OneDrive wird Nextcloud auf einem eigenen Server betrieben. Dadurch behalten wir die volle Kontrolle über Daten, Zugriffe und Sicherheitsrichtlinien.
 <br><br>
 <img src="./BilderDokumentation/Nextcloud.png" alt="Nextcloud" width="300">
 
+*Abbildung 1: Nextcloud als Open-Source-Cloud-Lösung*
 <br>
 
 ## 1.4 Aufgabenverteilung
-Wie sind wird überhaupt vorgegangen in diesem Projekt. Wir wollten bevor wird anfangen eine klare Aufgabenverteilung machen, sodass jeder genau weiss was er zu tun hat. Während Deon die zwei Initialscripts erstellt hat, haben Armin und Jan auf das deploy.sh konzentriert. 
+Zu Beginn des Projekts legten wir eine klare Aufgabenverteilung fest, damit jede Person wusste, wofür sie verantwortlich ist. Deon erstellte die beiden Initial-Skripte für den Webserver und den Datenbankserver. Armin und Jan konzentrierten sich auf die Entwicklung des deploy.sh Skripts.
 <br> <br>
-Bezüglich der Dokumentation haben wir nichts wirklich eine klare Verteilung gemacht. Wenn man Zeit hatte hat man an der Dokumentation gearbeitet. Jedoch haben wir uns auf eine Regel geeinigt. Wenn jemand zuhause etwas macht. Wird das zuerst immer besprochen. So konnten wir probleme bezüglich dem Pushen in git umgehen.
+Bei der Dokumentation gab es keine feste Aufgabenverteilung. Sobald jemand Zeit hatte, arbeitete diese Person an der Dokumentation weiter. Dabei hielten wir uns an die Regel, Änderungen vorgängig abzusprechen, bevor sie in das Git-Repository gepusht wurden. So konnten wir Konflikte und Probleme bei der Versionsverwaltung vermeiden.
 
 ---
 <br><br>
@@ -65,12 +66,17 @@ Bevor wir mit dem Projekt begonnen haben, haben wir uns zunächst angeschaut, we
 
 <img src="./BilderDokumentation/AWS-Netzplan.png" alt="Nextcloud" width="500">
 
+*Abbildung 2: AWS-Netzwerkaufbau mit VPC, Public Subnet, Webserver und Datenbankserver*
+
 <br><br>
 
 ## 2.2 Git-Repo aufsetzen
 Damit wir unser Projekt in einer Versionverwaltungs betreiben können, haben wir nach der Plannung angefangen das Git-Repository aufzusetzten. [Github](https://github.com/) ist ein Versionverwaltungs tool welches sich unserer Meinung nach sehr einfach bedienen lässt. Bevor uns also an das Scripten gesetzt haben, haben wir das Git-Repository aufgesetzt. Dafür haben wir diese Sache ausgefüllt:
 <br><br>
 <img src="./BilderDokumentation/GitRepo-Aufsetzten.png" alt="Nextcloud" width="500">
+
+*Abbildung 3: Erstellung eines GitHub-Repositories für das Projekt*
+
 | Begriff | Beschreibung |
 |--------|--------------|
 | Repository name  | M346-Projekt |
